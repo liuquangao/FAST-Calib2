@@ -1,5 +1,4 @@
 
-#include <ros/ros.h>
 #include <Eigen/Dense>
 #include <fstream>
 #include <sstream>
@@ -109,9 +108,10 @@ static bool parseCentersLine(const std::string& line, std::vector<Eigen::Vector3
 
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "multi_fast_calib");
-    ros::NodeHandle nh;
+    rclcpp::init(argc, argv);
+    rclcpp::Node::SharedPtr nh = fast_calib_compat::makeNode("multi_fast_calib");
     Params params = loadParameters(nh);
+    rclcpp::shutdown();
 
     std::string output_error;
     if (!ensureDirectoryTree(params.output_path, output_error))

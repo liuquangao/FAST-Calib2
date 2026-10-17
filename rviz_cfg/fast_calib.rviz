@@ -1,0 +1,120 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 20
+    - Class: rviz_default_plugins/PointCloud2
+      Name: colored_cloud
+      Enabled: true
+      Color Transformer: RGB8
+      Channel Name: intensity
+      Style: Points
+      Size (Pixels): 2
+      Topic:
+        Value: /colored_cloud
+        Depth: 5
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+    - Class: rviz_default_plugins/PointCloud2
+      Name: plane_cloud
+      Enabled: false
+      Color Transformer: Intensity
+      Channel Name: intensity
+      Style: Points
+      Size (Pixels): 2
+      Topic:
+        Value: /plane_cloud
+        Depth: 5
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+    - Class: rviz_default_plugins/PointCloud2
+      Name: annulus_cloud
+      Enabled: true
+      Color Transformer: FlatColor
+      Channel Name: intensity
+      Style: Points
+      Size (Pixels): 3
+      Topic:
+        Value: /annulus_cloud
+        Depth: 5
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+      Color: 138; 226; 52
+    - Class: rviz_default_plugins/PointCloud2
+      Name: edge_cloud
+      Enabled: false
+      Color Transformer: FlatColor
+      Channel Name: intensity
+      Style: Points
+      Size (Pixels): 3
+      Topic:
+        Value: /edge_cloud
+        Depth: 5
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+      Color: 239; 41; 41
+    - Class: rviz_default_plugins/PointCloud2
+      Name: center_cloud
+      Enabled: true
+      Color Transformer: FlatColor
+      Channel Name: intensity
+      Style: Points
+      Size (Pixels): 12
+      Topic:
+        Value: /center_cloud
+        Depth: 5
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+      Color: 255; 255; 255
+    - Class: rviz_default_plugins/PointCloud2
+      Name: qr_cloud
+      Enabled: true
+      Color Transformer: FlatColor
+      Channel Name: intensity
+      Style: Points
+      Size (Pixels): 12
+      Topic:
+        Value: /qr_cloud
+        Depth: 5
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+      Color: 255; 0; 255
+    - Class: rviz_default_plugins/PointCloud2
+      Name: aligned_lidar_centers
+      Enabled: true
+      Color Transformer: FlatColor
+      Channel Name: intensity
+      Style: Points
+      Size (Pixels): 12
+      Topic:
+        Value: /aligned_lidar_centers
+        Depth: 5
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+      Color: 252; 233; 79
+  Global Options:
+    Fixed Frame: map
+    Background Color: 48; 48; 48
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 8
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Pitch: 0.3
+      Yaw: 3.14

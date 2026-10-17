@@ -14,8 +14,7 @@ which is included as part of this source code package.
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/common/transforms.h>
-#include <pcl_ros/point_cloud.h>
-#include <pcl_ros/filters/passthrough.h>
+#include <pcl/filters/passthrough.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/features/boundary.h>
@@ -34,7 +33,7 @@ which is included as part of this source code package.
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <tf/tf.h>
+#include "ros2_compat.h"
 #include "color.h"
 
 using namespace std;
@@ -86,47 +85,49 @@ struct Params {
 };
 
 // 读取参数
-Params loadParameters(ros::NodeHandle &nh) {
+Params loadParameters(const rclcpp::Node::SharedPtr &nh) {
+  using fast_calib_compat::param;
+  using fast_calib_compat::getParam;
   Params params;
-  nh.param("camera_width", params.camera_width, 0);
-  nh.param("camera_height", params.camera_height, 0);
-  nh.param("fx", params.fx, 1215.31801774424);
-  nh.param("fy", params.fy, 1214.72961288138);
-  nh.param("cx", params.cx, 1047.86571859677);
-  nh.param("cy", params.cy, 745.068353101898);
-  nh.param("k1", params.k1, -0.33574781188503);
-  nh.param("k2", params.k2, 0.10996870793601);
-  nh.param("p1", params.p1, 0.000157303079833973);
-  nh.param("p2", params.p2, 0.000544930726278493);
-  nh.param("marker_size", params.marker_size, 0.2);
-  nh.param("delta_width_qr_center", params.delta_width_qr_center, 0.55);
-  nh.param("delta_height_qr_center", params.delta_height_qr_center, 0.35);
-  nh.param("delta_width_circles", params.delta_width_circles, 0.5);
-  nh.param("delta_height_circles", params.delta_height_circles, 0.4);
-  nh.param("min_detected_markers", params.min_detected_markers, 3);
-  nh.param("circle_radius", params.circle_radius, 0.12);
-  nh.param("annulus_half_width", params.annulus_half_width, 0.025);
-  nh.param("board_width", params.board_width, 1.4);
-  nh.param("board_height", params.board_height, 1.0);
-  nh.param("board_roi_margin", params.board_roi_margin, 0.08);
-  nh.param("board_roi_depth", params.board_roi_depth, 0.12);
-  nh.param("auto_roi_voxel_leaf", params.auto_roi_voxel_leaf, 0.01);
-  nh.param("annulus_voxel_leaf", params.annulus_voxel_leaf, 0.005);
-  nh.param("auto_roi_geometry_max_error", params.auto_roi_geometry_max_error, 0.10);
-  nh.param("image_path", params.image_path, string(""));
-  nh.param("bag_path", params.bag_path, string(""));
-  nh.param("lidar_topic", params.lidar_topic, string("/livox/lidar"));
+  param(nh, "camera_width", params.camera_width, 0);
+  param(nh, "camera_height", params.camera_height, 0);
+  param(nh, "fx", params.fx, 1215.31801774424);
+  param(nh, "fy", params.fy, 1214.72961288138);
+  param(nh, "cx", params.cx, 1047.86571859677);
+  param(nh, "cy", params.cy, 745.068353101898);
+  param(nh, "k1", params.k1, -0.33574781188503);
+  param(nh, "k2", params.k2, 0.10996870793601);
+  param(nh, "p1", params.p1, 0.000157303079833973);
+  param(nh, "p2", params.p2, 0.000544930726278493);
+  param(nh, "marker_size", params.marker_size, 0.2);
+  param(nh, "delta_width_qr_center", params.delta_width_qr_center, 0.55);
+  param(nh, "delta_height_qr_center", params.delta_height_qr_center, 0.35);
+  param(nh, "delta_width_circles", params.delta_width_circles, 0.5);
+  param(nh, "delta_height_circles", params.delta_height_circles, 0.4);
+  param(nh, "min_detected_markers", params.min_detected_markers, 3);
+  param(nh, "circle_radius", params.circle_radius, 0.12);
+  param(nh, "annulus_half_width", params.annulus_half_width, 0.025);
+  param(nh, "board_width", params.board_width, 1.4);
+  param(nh, "board_height", params.board_height, 1.0);
+  param(nh, "board_roi_margin", params.board_roi_margin, 0.08);
+  param(nh, "board_roi_depth", params.board_roi_depth, 0.12);
+  param(nh, "auto_roi_voxel_leaf", params.auto_roi_voxel_leaf, 0.01);
+  param(nh, "annulus_voxel_leaf", params.annulus_voxel_leaf, 0.005);
+  param(nh, "auto_roi_geometry_max_error", params.auto_roi_geometry_max_error, 0.10);
+  param(nh, "image_path", params.image_path, string(""));
+  param(nh, "bag_path", params.bag_path, string(""));
+  param(nh, "lidar_topic", params.lidar_topic, string("/livox/lidar"));
 
   // Prefer an explicit mounting-axis description.  The values answer
   // "which signed LiDAR axis points forward/up?"; left is derived from the
   // right-handed relation forward x left = up.
-  bool has_forward_axis = nh.getParam("lidar_forward_axis", params.lidar_forward_axis);
-  bool has_up_axis = nh.getParam("lidar_up_axis", params.lidar_up_axis);
+  bool has_forward_axis = getParam(nh, "lidar_forward_axis", params.lidar_forward_axis);
+  bool has_up_axis = getParam(nh, "lidar_up_axis", params.lidar_up_axis);
 
   // Backward compatibility for configurations created before the mounting
   // axes were user-configurable.  New configurations should not use this.
   string legacy_sort_mode;
-  bool has_legacy_sort_mode = nh.getParam("lidar_sort_mode", legacy_sort_mode);
+  bool has_legacy_sort_mode = getParam(nh, "lidar_sort_mode", legacy_sort_mode);
   if (!has_forward_axis && !has_up_axis) {
     if (has_legacy_sort_mode && legacy_sort_mode == "avia_roll_x_90") {
       params.lidar_forward_axis = "+x";
@@ -155,14 +156,14 @@ Params loadParameters(ros::NodeHandle &nh) {
              "lidar_forward_axis/lidar_up_axis are configured.");
   }
 
-  nh.param("output_path", params.output_path, string("/tmp/fast_calib_output"));
-  nh.param("use_auto_lidar_roi", params.use_auto_lidar_roi, false);
-  nh.param("x_min", params.x_min, 1.5);
-  nh.param("x_max", params.x_max, 3.0);
-  nh.param("y_min", params.y_min, -1.5);
-  nh.param("y_max", params.y_max, 2.0);
-  nh.param("z_min", params.z_min, -0.5);
-  nh.param("z_max", params.z_max, 2.0);
+  param(nh, "output_path", params.output_path, string("/tmp/fast_calib_output"));
+  param(nh, "use_auto_lidar_roi", params.use_auto_lidar_roi, false);
+  param(nh, "x_min", params.x_min, 1.5);
+  param(nh, "x_max", params.x_max, 3.0);
+  param(nh, "y_min", params.y_min, -1.5);
+  param(nh, "y_max", params.y_max, 2.0);
+  param(nh, "z_min", params.z_min, -0.5);
+  param(nh, "z_max", params.z_max, 2.0);
   return params;
 }
 

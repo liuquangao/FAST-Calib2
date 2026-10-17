@@ -11,8 +11,6 @@ Standalone LiDAR-only batch test entry for target annulus center extraction.
 #include <array>
 #include <cctype>
 #include <fstream>
-#include <rosbag/bag.h>
-#include <rosbag/view.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/filters/impl/extract_indices.hpp>
 #include <pcl/filters/impl/filter.hpp>
@@ -22,131 +20,10 @@ Standalone LiDAR-only batch test entry for target annulus center extraction.
 #include <pcl/impl/pcl_base.hpp>
 #include <pcl/segmentation/impl/extract_clusters.hpp>
 #include <pcl/segmentation/impl/sac_segmentation.hpp>
-#include <sensor_msgs/PointCloud2.h>
-#include <sensor_msgs/point_cloud2_iterator.h>
 #include <sys/stat.h>
 
 namespace
 {
-// 判断 PointCloud2 消息中是否包含指定字段
-bool hasField(const sensor_msgs::PointCloud2& msg, const std::string& name)
-{
-    for (const auto& field : msg.fields)
-    {
-        if (field.name == name) return true;
-    }
-    return false;
-}
-
-// 从 rosbag 中读取指定 LiDAR topic，并统一转换为 Common::Point 点云
-bool loadCloudFromBag(const std::string& bag_path,
-                      const std::string& lidar_topic,
-                      pcl::PointCloud<Common::Point>::Ptr cloud,
-                      LiDARType& detected_type)
-{
-    cloud->clear();
-    detected_type = LiDARType::Unknown;
-
-    rosbag::Bag bag;
-    try
-    {
-        bag.open(bag_path, rosbag::bagmode::Read);
-    }
-    catch (const rosbag::BagException& e)
-    {
-        ROS_ERROR_STREAM("[LiDAR Test] Failed to open bag " << bag_path << ": " << e.what());
-        return false;
-    }
-
-    rosbag::View view(bag, rosbag::TopicQuery(std::vector<std::string>{lidar_topic}));
-    size_t message_count = 0;
-
-    for (const rosbag::MessageInstance& m : view)
-    {
-        if (auto livox_custom_msg = m.instantiate<livox_ros_driver::CustomMsg>())
-        {
-            detected_type = LiDARType::Solid;
-            cloud->reserve(cloud->size() + livox_custom_msg->point_num);
-            for (uint32_t i = 0; i < livox_custom_msg->point_num; ++i)
-            {
-                Common::Point p;
-                p.x = livox_custom_msg->points[i].x;
-                p.y = livox_custom_msg->points[i].y;
-                p.z = livox_custom_msg->points[i].z;
-                p.intensity = static_cast<float>(livox_custom_msg->points[i].reflectivity);
-                p.ring = static_cast<std::uint16_t>(livox_custom_msg->points[i].line);
-                p.scan_id = static_cast<std::uint32_t>(message_count);
-                cloud->push_back(p);
-            }
-            ++message_count;
-            continue;
-        }
-
-        if (auto pcl_msg = m.instantiate<sensor_msgs::PointCloud2>())
-        {
-            const bool has_ring = hasField(*pcl_msg, "ring");
-            const bool has_intensity = hasField(*pcl_msg, "intensity");
-            const bool has_reflectivity = hasField(*pcl_msg, "reflectivity");
-
-            if (detected_type == LiDARType::Unknown)
-            {
-                detected_type = has_ring ? LiDARType::Mech : LiDARType::Solid;
-            }
-
-            sensor_msgs::PointCloud2ConstIterator<float> it_x(*pcl_msg, "x");
-            sensor_msgs::PointCloud2ConstIterator<float> it_y(*pcl_msg, "y");
-            sensor_msgs::PointCloud2ConstIterator<float> it_z(*pcl_msg, "z");
-
-            std::unique_ptr<sensor_msgs::PointCloud2ConstIterator<std::uint16_t>> it_ring_ptr;
-            if (has_ring)
-            {
-                it_ring_ptr.reset(new sensor_msgs::PointCloud2ConstIterator<std::uint16_t>(*pcl_msg, "ring"));
-            }
-
-            std::unique_ptr<sensor_msgs::PointCloud2ConstIterator<float>> it_intensity_ptr;
-            if (has_intensity)
-            {
-                it_intensity_ptr.reset(new sensor_msgs::PointCloud2ConstIterator<float>(*pcl_msg, "intensity"));
-            }
-            else if (has_reflectivity)
-            {
-                it_intensity_ptr.reset(new sensor_msgs::PointCloud2ConstIterator<float>(*pcl_msg, "reflectivity"));
-            }
-
-            const size_t n = static_cast<size_t>(pcl_msg->width) * pcl_msg->height;
-            cloud->reserve(cloud->size() + n);
-            for (size_t i = 0; i < n; ++i, ++it_x, ++it_y, ++it_z)
-            {
-                Common::Point p;
-                p.x = *it_x;
-                p.y = *it_y;
-                p.z = *it_z;
-                p.ring = 0xFFFF;
-                p.intensity = 0.0f;
-
-                if (it_ring_ptr)
-                {
-                    p.ring = **it_ring_ptr;
-                    ++(*it_ring_ptr);
-                }
-                if (it_intensity_ptr)
-                {
-                    p.intensity = **it_intensity_ptr;
-                    ++(*it_intensity_ptr);
-                }
-                p.scan_id = static_cast<std::uint32_t>(message_count);
-
-                cloud->push_back(p);
-            }
-            ++message_count;
-        }
-    }
-
-    ROS_INFO("[LiDAR Test] Loaded %zu messages, %zu points from %s",
-             message_count, cloud->size(), bag_path.c_str());
-    return message_count > 0 && !cloud->empty();
-}
-
 // 将 LiDAR 类型枚举转换为日志可读字符串
 std::string lidarTypeName(LiDARType type)
 {
@@ -685,12 +562,18 @@ void validateRadiusQuality(const pcl::PointCloud<pcl::PointXYZ>::Ptr& edge_cloud
 // LiDAR 圆心提取批量测试入口
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "lidar_center_test");
-    ros::NodeHandle nh;
+    rclcpp::init(argc, argv);
+    rclcpp::Node::SharedPtr nh = fast_calib_compat::makeNode("lidar_center_test");
+    // Strip --ros-args so the positional arguments below stay intact.
+    std::vector<std::string> args = rclcpp::remove_ros_arguments(argc, argv);
+    std::vector<char*> arg_ptrs;
+    for (auto& a : args) arg_ptrs.push_back(&a[0]);
+    argc = static_cast<int>(arg_ptrs.size());
+    argv = arg_ptrs.data();
 
     if (argc < 3)
     {
-        std::cerr << "Usage: rosrun fast_calib lidar_center_test <bag_path> <lidar_topic> "
+        std::cerr << "Usage: ros2 run fast_calib lidar_center_test <bag_path> <lidar_topic> "
                      "[auto|solid|mech] [forward_axis up_axis]" << std::endl;
         return 2;
     }

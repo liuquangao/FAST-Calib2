@@ -1,15 +1,16 @@
 # Camera intrinsics
   # Resolution used when calibrating the active intrinsics below.
-  camera_width: 2448
-  camera_height: 2048
-  fx: 2364.049767406230
-  fy: 2368.875165893467
-  cx: 1211.209298385360
-  cy: 1040.561211270159
-  k1: -0.051619025360610
-  k2: 0.125944589327291
-  p1: -0.0002140931408129925
-  p2: 0.0006409200928440982
+  # ZED2i (S/N 36711878) /zed/zed_node/rgb/color/rect/image, HD1080 rectified -> zero distortion.
+  camera_width: 1920
+  camera_height: 1080
+  fx: 1053.135253906
+  fy: 1053.135253906
+  cx: 964.645141602
+  cy: 554.743286133
+  k1: 0.000000000
+  k2: 0.000000000
+  p1: 0.000000000
+  p2: 0.000000000
 
 # Calibration target parameters
   marker_size: 0.20 # ArUco marker side length; adjust to match your physical target
@@ -36,8 +37,10 @@
   lidar_forward_axis: "+x"
   lidar_up_axis: "+z"
   lidar_topic: "/livox/lidar"
-  bag_path: "$(find fast_calib)/calib_data/avia/mid.bag"
-  image_path: "$(find fast_calib)/calib_data/avia/mid.bmp"
+  # ROS 2: bag_path is a rosbag2 directory (or .db3); scripts/capture_scene.py
+  # writes <scene>/lidar and <scene>/image.png under calib_data.
+  bag_path: "$(find fast_calib)/calib_data/mid/lidar"
+  image_path: "$(find fast_calib)/calib_data/mid/image.png"
 
 # Output
   output_path: "$(find fast_calib)/output"
