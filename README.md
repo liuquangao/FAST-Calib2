@@ -1,4 +1,8 @@
-# FAST-Calib2
+# FAST-Calib2 — ROS 2 Port
+
+This fork provides a ROS 2 port of [xuankuzcr/FAST-Calib2](https://github.com/xuankuzcr/FAST-Calib2), with tooling for static LiDAR-camera calibration using a Livox Mid360S and a ZED2i camera. The adaptation lives on the `ros2-humble` branch; the branch name describes the port target, not a guarantee of compatibility with every ROS 2 distribution.
+
+The port adds `ament_cmake` builds, `rclcpp` nodes, Python launch files, rosbag2 input, static scene capture, and offline cloud colouring. The original calibration method, target design, and authorship are credited below.
 
 ## LiDAR-Camera Extrinsic Calibration with Reflective Annular Targets
 
@@ -21,7 +25,29 @@ FAST-Calib2 extends [FAST-Calib](https://github.com/hku-mars/FAST-Calib) to LiDA
 
 ## 1. Prerequisites
 
-PCL>=1.8, OpenCV>=4.0.
+- ROS 2 Humble with a sourced development environment, `colcon`, and `rosdep`.
+- C++17, PCL >= 1.10, and OpenCV >= 4.0 with ArUco support (the contrib module on older OpenCV versions). The code also supports the OpenCV >= 4.7 ArUco API.
+- ROS 2 packages listed in `package.xml`, plus `cv_bridge` for scene capture and `rviz2` for optional visualization.
+- Optional: build and source `livox_ros_driver2` **before compiling** this package to enable `livox_ros_driver2/msg/CustomMsg` input. Standard `sensor_msgs/msg/PointCloud2` input does not require it.
+
+Build in a ROS 2 workspace:
+
+```bash
+source /opt/ros/humble/setup.bash
+mkdir -p ~/fast_calib_ws/src
+cd ~/fast_calib_ws/src
+git clone --branch ros2-humble https://github.com/liuquangao/FAST-Calib2.git
+cd ~/fast_calib_ws
+rosdep install --from-paths src --ignore-src -r -y
+sudo apt install ros-humble-cv-bridge ros-humble-rviz2 libopencv-contrib-dev
+colcon build --symlink-install --packages-select fast_calib
+source install/setup.bash
+cd src/FAST-Calib2
+```
+
+Source an existing Livox workspace before the build if using CustomMsg, then rebuild `fast_calib` if that driver was added later. Use `--symlink-install`: the launch helper resolves default data/output paths relative to the source configuration file, and the capture script resolves its default data directory relative to its source file.
+
+Commands below assume the workspace has been sourced and the current directory is this repository. Local recordings and generated results are excluded from Git; collect your own data before running calibration.
 
 ## 2. Calibration Target
 
@@ -66,31 +92,75 @@ The final quality checks include center-to-center geometry error and annulus rad
 
 ## 4. Run Examples
 
-Prepare static acquisition data in the `calib_data` folder (Download the example data from [Google Drive](https://drive.google.com/drive/folders/1VnMCsGj3Gat7dxe6IION0SfS7jYNMw1g?usp=sharing)):
+### Configure the rig and target
 
-- rosbag containing point cloud messages
-- corresponding image
-
-Describe the LiDAR mounting in `config/qr_params.yaml`:
+Edit the flat YAML file `config/qr_params.yaml` to match your camera intrinsics, physical target dimensions, and LiDAR mounting:
 
 ```yaml
 lidar_forward_axis: "+x"
 lidar_up_axis: "+z"
 ```
 
-The axis values must be signed, perpendicular axes such as `+x` and `-y`.
+Each value describes the signed native LiDAR axis pointing in that physical direction. The two axes must be perpendicular, for example `+x` and `-y`. Target dimensions are in metres. The bundled camera parameters are an example for a ZED2i rectified HD1080 stream; replace them for your own camera. Rectified images require matching rectified intrinsics and zero distortion.
 
-Run single-scene calibration:
+The launch helper automatically overrides camera intrinsics from `camera_info.yaml` beside the selected image, when present. Use `config_file:=/absolute/path/to/qr_params.yaml` to select another flat YAML configuration. The helper treats the parent of the directory containing the configuration file as the package root for `$(find fast_calib)` paths; keep custom configs in a `config/` subdirectory or use absolute data/output paths.
 
-```bash
-roslaunch fast_calib calib.launch
-```
+### Capture static scenes
 
-After collecting at least three scenes, run multi-scene joint calibration:
+Start the camera and LiDAR drivers first. Keep both the rig and the target still throughout each capture. Check the actual topic names with `ros2 topic list -t`, then record one scene:
 
 ```bash
-roslaunch fast_calib multi_calib.launch
+ros2 run fast_calib capture_scene.py mid --duration 15 \
+  --lidar-topic /livox/lidar \
+  --image-topic /zed/zed_node/rgb/color/rect/image \
+  --info-topic /zed/zed_node/rgb/color/rect/image/camera_info
 ```
+
+Pass the actual CameraInfo topic explicitly if your driver uses another name. The script defaults to `<image-topic>/camera_info`. Its optional IMU subscription defaults to `/livox/imu`; use `--imu-topic ""` to disable it. The reported up-axis estimate assumes the IMU and LiDAR axes agree.
+
+The capture creates:
+
+```text
+calib_data/mid/
+├── lidar/             # SQLite3 rosbag2 directory
+├── image.png          # Last camera frame received
+└── camera_info.yaml   # Intrinsics, when CameraInfo is available
+```
+
+Repeat with scene names `left` and `right`, changing the target placement between captures. An existing scene's `lidar` directory is not overwritten. These are static acquisitions: the script saves the last image and accumulates LiDAR messages rather than synchronizing a moving sequence.
+
+You can also supply an existing rosbag2 directory (or `.db3` file) and a corresponding image. Supported LiDAR message types are `sensor_msgs/msg/PointCloud2` and, when enabled at build time, `livox_ros_driver2/msg/CustomMsg`. Mechanical LiDAR processing requires the `ring` field. Upstream [example data](https://drive.google.com/drive/folders/1VnMCsGj3Gat7dxe6IION0SfS7jYNMw1g?usp=sharing) may contain ROS 1 `.bag` files; those must be converted to rosbag2 before use with this branch.
+
+### Single-scene calibration
+
+```bash
+ros2 launch fast_calib calib.launch.py \
+  bag_path:="$PWD/calib_data/mid/lidar" \
+  image_path:="$PWD/calib_data/mid/image.png" \
+  output_path:="$PWD/output" rviz:=true
+```
+
+Additional launch overrides are `lidar_topic`, `lidar_forward_axis`, `lidar_up_axis`, and `use_auto_lidar_roi`. RViz is disabled by default.
+
+Outputs include `single_calib_result.txt`, `colored_cloud.pcd`, and `qr_detect.png`. Each successful run appends four LiDAR-camera center pairs to `circle_center_record.txt`. The single-scene result and debug images/cloud are overwritten on subsequent runs; copy them if you want per-scene snapshots.
+
+### Multi-scene calibration
+
+Run single-scene calibration for `mid`, `left`, and `right`, using the same output directory and camera configuration. Then run:
+
+```bash
+ros2 launch fast_calib multi_calib.launch.py output_path:="$PWD/output"
+```
+
+The solver uses the **last three valid scene records** in `output/circle_center_record.txt`, and writes `output/multi_calib_result.txt`. Use a fresh output directory for a new rig or calibration session so records do not mix.
+
+Both result files contain FAST-LIVO2-style `Rcl` and `Pcl` values, with the LiDAR-to-camera convention:
+
+```text
+p_camera = Rcl * p_lidar + Pcl
+```
+
+Translation is in metres. Check the projected cloud/image alignment before using the extrinsics downstream.
 
 Typical multi-scene target placement:
 
@@ -101,44 +171,45 @@ Typical multi-scene target placement:
 
 ## 5. Standalone LiDAR Center Extraction Test
 
-<details>
-<summary>Show Unit Test Usage</summary>
-
-The repository also provides a LiDAR-only test tool for checking annulus center extraction before running full camera-LiDAR calibration.
-
-Load parameters:
+The LiDAR-only tool checks annulus center extraction before full camera-LiDAR calibration:
 
 ```bash
-rosparam load config/qr_params.yaml /
-rosparam set /output_path "$(rospack find fast_calib)/output"
+ros2 launch fast_calib lidar_center_test.launch.py \
+  bag:="$PWD/calib_data/mid/lidar" topic:=/livox/lidar mode:=solid \
+  output_path:="$PWD/output"
 ```
 
-Run solid-state LiDAR data:
+Use `mode:=mech` for mechanical LiDAR data and supply its point-cloud topic. The default `mode:=auto` infers the pipeline from the message fields. `config_file`, `lidar_forward_axis`, and `lidar_up_axis` can also be overridden.
+
+The tool writes `*_centers.txt` and `*_debug_cloud.pcd`. Debug cloud colors are: board points in an intensity color map, annulus points in green, solid-LiDAR boundary points in red, and centers as white spheres.
+
+## 6. Optional Offline Cloud Colouring
+
+With Open3D installed in your ROS Python environment, colour a captured scene using the estimated extrinsics:
 
 ```bash
-rosrun fast_calib lidar_center_test calib_data/avia/left.bag /livox/lidar solid
-rosrun fast_calib lidar_center_test calib_data/avia/mid.bag /livox/lidar solid
-rosrun fast_calib lidar_center_test calib_data/avia/right.bag /livox/lidar solid
+python3 scripts/colorize_cloud.py calib_data/mid output/multi_calib_result.txt \
+  output/colored_mid_occl.pcd --occlusion
 ```
 
-Run mechanical LiDAR data:
+This helper requires `camera_info.yaml`, a SQLite3 scene bag containing only `PointCloud2` messages, and the Python `sensor_msgs_py`, NumPy, OpenCV, PyYAML, and Open3D packages. It does not decode Livox CustomMsg. `--occlusion` drops points hidden from the camera; `--occlusion grey` keeps them in grey. The helper is run from source and is not installed as a `ros2 run` executable.
+
+The older `scripts/distance_filter_tool.py` still imports ROS 1 `rosbag` and is not part of the ROS 2 workflow, even though it is installed by CMake.
+
+## 7. Tests
+
+The package includes C++ tests for common geometry and configuration helpers:
 
 ```bash
-rosrun fast_calib lidar_center_test calib_data/hesai-jt128/left.bag /lidar_points mech
-rosrun fast_calib lidar_center_test calib_data/hesai-jt128/mid.bag /lidar_points mech
-rosrun fast_calib lidar_center_test calib_data/hesai-jt128/right.bag /lidar_points mech
+cd ~/fast_calib_ws
+colcon test --packages-select fast_calib --event-handlers console_direct+
+colcon test-result --verbose
 ```
 
-The test tool writes:
+These tests do not replace validation on your own recorded calibration scenes.
 
-- `*_centers.txt`: extracted annulus center coordinates
-- `*_debug_cloud.pcd`: board point cloud, annulus points, boundary points, and center markers for visualization
+## 8. Attribution and License
 
-Debug PCD colors:
+Original FAST-Calib2 author: Chunran Zheng and the upstream contributors. This fork builds on [FAST-Calib2](https://github.com/xuankuzcr/FAST-Calib2) and its predecessor [FAST-Calib](https://github.com/hku-mars/FAST-Calib).
 
-- Board points: intensity color map
-- Annulus points: green
-- Solid-LiDAR boundary points: red
-- Centers: white spheres
-
-</details>
+The ROS 2 adaptation and documentation are maintained in this fork. This project is distributed under the GNU General Public License version 2; see [LICENSE](LICENSE). Original copyright and author notices are retained.
