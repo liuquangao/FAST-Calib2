@@ -49,17 +49,21 @@ class SceneCapture(Node):
         self.writer.open(
             rosbag2_py.StorageOptions(uri=os.path.join(out_dir, 'lidar'), storage_id='sqlite3'),
             rosbag2_py.ConverterOptions('cdr', 'cdr'))
-        self.writer.create_topic(rosbag2_py.TopicMetadata(
-            name=args.lidar_topic, type=lidar_type, serialization_format='cdr'))
+        meta = dict(name=args.lidar_topic, type=lidar_type, serialization_format='cdr')
+        try:
+            topic_meta = rosbag2_py.TopicMetadata(**meta)
+        except TypeError:  # Jazzy+ requires a topic id
+            topic_meta = rosbag2_py.TopicMetadata(id=0, **meta)
+        self.writer.create_topic(topic_meta)
 
+        qos = qos_profile_sensor_data if args.qos == 'sensor' else 10
         msg_cls = PointCloud2 if lidar_type == 'sensor_msgs/msg/PointCloud2' else CustomMsg
-        self.create_subscription(msg_cls, args.lidar_topic, self.on_lidar,
-                                 qos_profile_sensor_data, raw=True)
+        self.create_subscription(msg_cls, args.lidar_topic, self.on_lidar, qos, raw=True)
         # raw=True: only the last frame is kept, so deserialise (slow for a 1080p frame in rclpy) once at the end.
-        self.create_subscription(Image, args.image_topic, self.on_image, qos_profile_sensor_data, raw=True)
-        self.create_subscription(CameraInfo, args.info_topic, self.on_info, qos_profile_sensor_data)
+        self.create_subscription(Image, args.image_topic, self.on_image, qos, raw=True)
+        self.create_subscription(CameraInfo, args.info_topic, self.on_info, qos)
         if args.imu_topic:
-            self.create_subscription(Imu, args.imu_topic, self.on_imu, qos_profile_sensor_data)
+            self.create_subscription(Imu, args.imu_topic, self.on_imu, qos)
 
     def resolve_type(self, topic):
         deadline = time.time() + 5.0
@@ -108,6 +112,8 @@ def main():
     parser.add_argument('--info-topic', default='', help='default: <image-topic>/camera_info')
     parser.add_argument('--imu-topic', default='/livox/imu',
                         help='LiDAR IMU used to report which LiDAR axis points up ("" to disable)')
+    parser.add_argument('--qos', choices=['sensor', 'reliable'], default='sensor',
+                        help='subscription QoS: best-effort sensor data, or reliable depth 10')
     args, ros_args = parser.parse_known_args()
     args.info_topic = args.info_topic or args.image_topic + '/camera_info'
 
