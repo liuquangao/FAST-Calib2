@@ -152,7 +152,7 @@ Run single-scene calibration for `mid`, `left`, and `right`, using the same outp
 ros2 launch fast_calib multi_calib.launch.py output_path:="$PWD/output"
 ```
 
-The solver uses the **last three valid scene records** in `output/circle_center_record.txt`, and writes `output/multi_calib_result.txt`. Use a fresh output directory for a new rig or calibration session so records do not mix.
+By default the solver uses the **last three valid scene records** in `output/circle_center_record.txt`, and writes `output/multi_calib_result.txt`. Pass `num_scenes:=N` to use the last N records, or `num_scenes:=0` to use all of them; more scenes spread over distance, height, and tilt make the extrinsic more stable. The solver prints each scene's residual so an inconsistent scene can be spotted and its three-line record removed. Use a fresh output directory for a new rig or calibration session so records do not mix.
 
 Both result files contain FAST-LIVO2-style `Rcl` and `Pcl` values, with the LiDAR-to-camera convention:
 
@@ -193,6 +193,15 @@ python3 scripts/colorize_cloud.py calib_data/mid output/multi_calib_result.txt \
 ```
 
 This helper requires `camera_info.yaml`, a SQLite3 scene bag containing only `PointCloud2` messages, and the Python `sensor_msgs_py`, NumPy, OpenCV, PyYAML, and Open3D packages. It does not decode Livox CustomMsg. `--occlusion` drops points hidden from the camera; `--occlusion grey` keeps them in grey. The helper is run from source and is not installed as a `ros2 run` executable.
+
+To check the extrinsics visually, project a captured scene's cloud onto its image, coloured by depth:
+
+```bash
+python3 scripts/project_cloud.py calib_data/mid output/multi_calib_result.txt \
+  output/projection_mid.png
+```
+
+The target edges, annuli, and other scene edges should coincide with the image. It has the same input requirements as `colorize_cloud.py` but does not need Open3D. `--depth-range NEAR FAR` sets the depth mapped to the colour map ends (default 1–6 m). It is also run from source.
 
 The older `scripts/distance_filter_tool.py` still imports ROS 1 `rosbag` and is not part of the ROS 2 workflow, even though it is installed by CMake.
 

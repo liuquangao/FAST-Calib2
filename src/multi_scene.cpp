@@ -111,6 +111,8 @@ int main(int argc, char** argv)
     rclcpp::init(argc, argv);
     rclcpp::Node::SharedPtr nh = fast_calib_compat::makeNode("multi_fast_calib");
     Params params = loadParameters(nh);
+    int num_scenes = 3;  // 0 = use every recorded scene
+    fast_calib_compat::param(nh, "num_scenes", num_scenes, 3);
     rclcpp::shutdown();
 
     std::string output_error;
@@ -170,9 +172,19 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // 取最后3个 block
+    // 取最后 num_scenes 个 block（0 = 全部）
+    size_t used = num_scenes <= 0 ? blocks.size() : static_cast<size_t>(num_scenes);
+    if (used < 3 || used > blocks.size())
+    {
+        ROS_ERROR("num_scenes=%d is invalid: need at least 3 and at most %zu recorded scenes.",
+                  num_scenes, blocks.size());
+        return 1;
+    }
+    const size_t first = blocks.size() - used;
+    std::cout << "Using the last " << used << " of " << blocks.size() << " recorded scenes." << std::endl;
+
     std::vector<Eigen::Vector3d> L, C;
-    for (size_t k = blocks.size() - 3; k < blocks.size(); ++k) 
+    for (size_t k = first; k < blocks.size(); ++k)
     {
         const auto& b = blocks[k];
         // 依次拼入，保持顺序一致
@@ -182,8 +194,8 @@ int main(int argc, char** argv)
             C.push_back(b.qr_pts[i]);
         }
     }
-    if (L.size() != 12 || C.size() != 12) {
-        ROS_ERROR("Merged pairs not equal to 12 (L=%zu, C=%zu).", L.size(), C.size());
+    if (L.size() != 4 * used || C.size() != 4 * used) {
+        ROS_ERROR("Merged pairs not equal to %zu (L=%zu, C=%zu).", 4 * used, L.size(), C.size());
         return 1;
     }
 
@@ -210,6 +222,16 @@ int main(int argc, char** argv)
 
     std::cout << BOLDYELLOW << "[Result] RMSE: " << BOLDRED << std::fixed << std::setprecision(4)
       << res.rms << " m" << RESET << std::endl;
+
+    // 每个场景的残差，便于找出质量差的场景
+    for (size_t k = first; k < blocks.size(); ++k)
+    {
+        double se = 0.0;
+        for (int i = 0; i < 4; ++i)
+            se += ((res.R * blocks[k].lidar_pts[i] + res.t) - blocks[k].qr_pts[i]).squaredNorm();
+        std::cout << "[Scene " << k << "] " << blocks[k].time_line << "  RMSE: " << std::setprecision(4)
+                  << std::sqrt(se / 4.0) << " m" << std::endl;
+    }
 
     std::cout << BOLDYELLOW << "[Result] Multi-scene calibration: extrinsic parameters T_cam_lidar = " << RESET << std::endl;
     std::cout << BOLDCYAN << std::fixed << std::setprecision(6) << T << RESET << std::endl;
